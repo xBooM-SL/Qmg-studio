@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(qmgnative C)
+add_library(qmgnative SHARED qmgcore.c qmg_jni.c)
+target_compile_options(qmgnative PRIVATE -O3)
+target_link_libraries(qmgnative log)
