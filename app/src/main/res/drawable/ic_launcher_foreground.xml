@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- glass phone body -->
+    <path android:pathData="M38,26 h32 a6,6 0 0 1 6,6 v44 a6,6 0 0 1 -6,6 h-32 a6,6 0 0 1 -6,-6 v-44 a6,6 0 0 1 6,-6 z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="32" android:startY="26"
+                android:endX="76" android:endY="82">
+                <item android:offset="0" android:color="#55FFFFFF"/>
+                <item android:offset="1" android:color="#1AFFFFFF"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M38,26 h32 a6,6 0 0 1 6,6 v44 a6,6 0 0 1 -6,6 h-32 a6,6 0 0 1 -6,-6 v-44 a6,6 0 0 1 6,-6 z"
+        android:strokeColor="#F2F8FF" android:strokeWidth="1.8" android:fillColor="#00000000"/>
+    <!-- speaker slot -->
+    <path android:pathData="M49,30.5 h10" android:strokeColor="#CCEAF6FF" android:strokeWidth="1.6" android:strokeLineCap="round"/>
+    <!-- play triangle -->
+    <path android:pathData="M48,44 L48,64 L65,54 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="48" android:startY="44"
+                android:endX="65" android:endY="64">
+                <item android:offset="0" android:color="#FFFFFFFF"/>
+                <item android:offset="1" android:color="#FF7DE3FF"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- spark -->
+    <path android:pathData="M78,24 l1.6,4.4 l4.4,1.6 l-4.4,1.6 l-1.6,4.4 l-1.6,-4.4 l-4.4,-1.6 l4.4,-1.6 z"
+        android:fillColor="#FFBFEFFF"/>
+</vector>
