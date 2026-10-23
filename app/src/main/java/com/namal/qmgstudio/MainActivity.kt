@@ -23,6 +23,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -241,13 +243,41 @@ private fun LogoMark(sizeDp: Int, fast: Boolean) {
 /* ================= building blocks ================= */
 
 @Composable
-private fun GlassCard(title: String, accent: Color = Cyan, badge: String? = null, content: @Composable ColumnScope.() -> Unit) {
+private fun GlassCard(title: String, accent: Color = Cyan, badge: String? = null, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(26.dp)
+    // slow flowing wave along the bottom of every card
+    val wtr = rememberInfiniteTransition(label = "cardwave")
+    val wph by wtr.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(5200, easing = LinearEasing), RepeatMode.Restart),
+        label = "wph"
+    )
+    var pressed by remember { mutableStateOf(false) }
+    val pop by animateFloatAsState(if (pressed) 0.97f else 1f, spring(), label = "pop")
     Column(
         Modifier
             .fillMaxWidth()
+            .graphicsLayer { scaleX = pop; scaleY = pop }
             .clip(shape)
             .background(Color(0x990A1830))
+            .drawBehind {
+                val tp = (2.0 * PI).toFloat()
+                fun wv(base: Float, amp: Float, ph: Float, dir: Float, c: Color) {
+                    val path = Path()
+                    path.moveTo(0f, size.height)
+                    val n = 24
+                    for (i in 0..n) {
+                        val x = size.width * i / n
+                        val y = size.height * base + size.height * amp * sin(tp * (i.toFloat() / n * 1.4f + dir * wph + ph))
+                        path.lineTo(x, y)
+                    }
+                    path.lineTo(size.width, size.height)
+                    path.close()
+                    drawPath(path, c)
+                }
+                wv(0.80f, 0.030f, 0.00f, 1f, accent.copy(alpha = 0.16f))
+                wv(0.88f, 0.025f, 0.35f, -1f, accent.copy(alpha = 0.22f))
+            }
             .background(Brush.linearGradient(listOf(Color(0x33FFFFFF), Color(0x0DFFFFFF), Color(0x1AFFFFFF))))
             .drawBehind {
                 // glossy highlight across the top edge
@@ -257,6 +287,11 @@ private fun GlassCard(title: String, accent: Color = Cyan, badge: String? = null
                 )
             }
             .border(1.dp, Brush.linearGradient(listOf(Color(0xAAFFFFFF), Color(0x14FFFFFF), Color(0x66FFFFFF))), shape)
+            .then(
+                if (onClick != null) Modifier.pointerInput(Unit) {
+                    detectTapGestures(onPress = { pressed = true; tryAwaitRelease(); pressed = false }, onTap = { onClick() })
+                } else Modifier
+            )
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -1448,14 +1483,19 @@ private fun App() {
 
                 /* ================= INSTALL ================= */
                 if (tab == 2) {
-                    GlassCard("Your animations", Cyan) {
+                    GlassCard("Your animations", Cyan, onClick = {
+                        if (built.isNotEmpty()) {
+                            val boot = built[0]?.file; val shut = built[1]?.file; val dir = target.stockDir
+                            saveDirect(clipBase() + "_QmgStudio-module.zip", "application/zip", "📦 Module zip") { o -> Engine.writeModuleZip(boot, boot, shut, dir, o) }
+                        } else status = "Make an animation first"
+                    }) {
                         for (s in 0..1) {
                             val b = built[s]
                             val name = if (s == 0) "Boot animation" else "Shutdown animation"
                             if (b != null) Label("✔ " + name + " · " + b.frames + " frames · " + sizeText(b.bytes))
                             else Hint("— " + name + ": not made yet")
                         }
-                        Hint("Make them in the Create tab. Boot also covers the loop file.")
+                        Hint("Make them in the Create tab. Boot also covers the loop file. Tap this card to save the module .zip at once.")
                     }
 
                     val any = built.isNotEmpty()

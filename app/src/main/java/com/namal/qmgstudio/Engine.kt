@@ -741,6 +741,14 @@ object Engine {
      * Returns where it was saved, or null on failure (see lastError).
      */
     fun saveMain(ctx: Context, name: String, mime: String, write: (OutputStream) -> Unit): String? {
+        // FAST PATH: stream straight into Download/QmgStudio (no temp file, no second copy, no root).
+        try {
+            val u = saveToDownloads(ctx, name, mime, "") { o ->
+                val b = java.io.BufferedOutputStream(o, 256 * 1024)
+                write(b); b.flush()
+            }
+            if (u != null) return "Download/QmgStudio/$name"
+        } catch (e: Exception) { lastError = e.message ?: e.javaClass.simpleName }
         return try {
             val tmp = File(ctx.cacheDir, "save_" + name)
             java.io.FileOutputStream(tmp).use { fo -> write(fo); fo.flush() }
@@ -809,29 +817,25 @@ object Engine {
     /** KernelSU / Magisk style module (needs a metamodule such as meta-overlayfs). */
     fun writeModuleZip(boot: File?, loop: File?, shutdown: File?, stockDir: String?, out: OutputStream) {
         val dir = moduleDir(stockDir)
-        // Build the whole zip in memory first, verify it, then write it in one go.
-        // This avoids truncated / half-written zips ("Could not find EOCD").
-        val buf = java.io.ByteArrayOutputStream()
-        ZipOutputStream(buf).use { z ->
-            fun put(name: String, bytes: ByteArray) {
-                z.putNextEntry(ZipEntry(name)); z.write(bytes); z.closeEntry()
-            }
-            put("module.prop", moduleProp().toByteArray())
-            if (boot != null) {
-                put("$dir/bootsamsung.qmg", boot.readBytes())
-                put("$dir/bootsamsungloop.qmg", (loop ?: boot).readBytes())
-            }
-            if (shutdown != null) put("$dir/shutdown.qmg", shutdown.readBytes())
+        // .qmg files are already compressed, so entries are STORED (no deflate): the zip is written instantly.
+        val z = ZipOutputStream(out)
+        z.setLevel(java.util.zip.Deflater.NO_COMPRESSION)
+        fun put(name: String, bytes: ByteArray) {
+            val e = ZipEntry(name)
+            val crc = java.util.zip.CRC32(); crc.update(bytes)
+            e.method = ZipEntry.STORED
+            e.size = bytes.size.toLong(); e.compressedSize = bytes.size.toLong(); e.crc = crc.value
+            z.putNextEntry(e); z.write(bytes); z.closeEntry()
         }
-        val bytes = buf.toByteArray()
-        // sanity check: must be readable and contain module.prop
-        java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes)).use { zi ->
-            var ok = false
-            while (true) { val e = zi.nextEntry ?: break; if (e.name == "module.prop") ok = true }
-            if (!ok) throw java.io.IOException("zip verify failed")
+        put("module.prop", moduleProp().toByteArray())
+        if (boot != null) {
+            val bb = boot.readBytes()
+            put("$dir/bootsamsung.qmg", bb)
+            put("$dir/bootsamsungloop.qmg", if (loop != null && loop != boot) loop.readBytes() else bb)
         }
-        out.write(bytes)
-        out.flush()
+        if (shutdown != null) put("$dir/shutdown.qmg", shutdown.readBytes())
+        z.finish()   // writes the central directory (EOCD) so the zip is complete
+        z.flush()
     }
 
     private fun su(script: String): Boolean {
