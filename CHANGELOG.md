@@ -1,7 +1,7 @@
 # Changelog
 
 ## Next
-- Module .zip now saves instantly: it is streamed straight into Download/QmgStudio (no temp copy, no in-memory re-check, STORED entries instead of re-compressing the .qmg files).
+- Module .zip now saves instantly into /storage/emulated/0/QmgStudio (same folder as the backup: direct write, then root, Download only as a last resort). STORED zip entries, no re-compression.
 - Every card now has a flowing wave animation. Tapping the "Your animations" card saves the module .zip at once.
 - In-app update: every time the app opens it checks the latest GitHub Release. If a newer version exists, an "Update available" dialog shows with release notes, a download progress bar and an "Update now" button that opens the Android installer.
 - About card: new "Check for updates" button.

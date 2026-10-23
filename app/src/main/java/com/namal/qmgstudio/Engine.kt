@@ -741,22 +741,15 @@ object Engine {
      * Returns where it was saved, or null on failure (see lastError).
      */
     fun saveMain(ctx: Context, name: String, mime: String, write: (OutputStream) -> Unit): String? {
-        // FAST PATH: stream straight into Download/QmgStudio (no temp file, no second copy, no root).
-        try {
-            val u = saveToDownloads(ctx, name, mime, "") { o ->
-                val b = java.io.BufferedOutputStream(o, 256 * 1024)
+        return try {
+            // write once into app cache (fast, always allowed), then move it to the main QmgStudio folder
+            val tmp = File(ctx.cacheDir, "save_" + name)
+            java.io.FileOutputStream(tmp).use { fo ->
+                val b = java.io.BufferedOutputStream(fo, 256 * 1024)
                 write(b); b.flush()
             }
-            if (u != null) return "Download/QmgStudio/$name"
-        } catch (e: Exception) { lastError = e.message ?: e.javaClass.simpleName }
-        return try {
-            val tmp = File(ctx.cacheDir, "save_" + name)
-            java.io.FileOutputStream(tmp).use { fo -> write(fo); fo.flush() }
             if (tmp.length() <= 0L) { lastError = "empty file"; return null }
-            // 1) Download/QmgStudio through MediaStore: instant, no permission, no root pop-up
-            val u = saveToDownloads(ctx, name, mime, "") { o -> tmp.inputStream().use { it.copyTo(o) } }
-            if (u != null) { tmp.delete(); return "Download/QmgStudio/$name" }
-            // 2) fallbacks: direct write to main storage, then root copy
+            // 1) main storage /storage/emulated/0/QmgStudio (same folder as the backup): direct write
             try {
                 val dir = File(MAIN_DIR)
                 if (dir.isDirectory || dir.mkdirs()) {
@@ -765,14 +758,17 @@ object Engine {
                     if (dst.length() == tmp.length()) { tmp.delete(); return "QmgStudio/$name" }
                 }
             } catch (e: Exception) { }
+            // 2) same folder through root (this is how the backup is saved)
             try {
                 val cmd = "mkdir -p '$MAIN_DIR' && cp '${tmp.path}' '$MAIN_DIR/$name' && chmod 666 '$MAIN_DIR/$name'"
                 val p = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
                 p.inputStream.readBytes(); p.errorStream.readBytes()
                 if (p.waitFor() == 0 && File("$MAIN_DIR/$name").length() == tmp.length()) { tmp.delete(); return "QmgStudio/$name" }
             } catch (e: Exception) { }
+            // 3) last resort only: Download/QmgStudio
+            val u = saveToDownloads(ctx, name, mime, "") { o -> tmp.inputStream().use { it.copyTo(o) } }
             tmp.delete()
-            null
+            if (u != null) "Download/QmgStudio/$name" else null
         } catch (e: Exception) {
             lastError = e.message ?: e.javaClass.simpleName
             null
