@@ -4,7 +4,7 @@ on:
     branches: [ main ]
     paths-ignore:
       - 'version.txt'
-      - '*.md'
+      - '**.md'
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,14 +14,19 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Bump version (1.0 -> 1.1 ... 1.9 -> 2.0)
+      - name: Work out the next version (1.0 -> 1.1 ... 1.9 -> 2.0)
         id: ver
         run: |
+          set -e
+          test -f version.txt || { echo "version.txt is missing in the repo root"; exit 1; }
           OLD=$(tr -d ' \r\n' < version.txt)
           MAJOR=${OLD%%.*}
           MINOR=${OLD##*.}
@@ -31,7 +36,6 @@ jobs:
             MINOR=0
           fi
           NEW="${MAJOR}.${MINOR}"
-          echo "$NEW" > version.txt
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
           echo "Version: $OLD -> $NEW"
 
@@ -39,32 +43,35 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
       - name: Install Android SDK parts
         run: |
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
+
       - name: Build APK
         env:
           APP_VERSION: ${{ steps.ver.outputs.version }}
         run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Name the APK
+      - name: Name and check the APK
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
+          set -e
           mkdir -p dist
-          cp app/build/outputs/apk/release/*.apk "dist/QmgStudio-v${{ steps.ver.outputs.version }}.apk"
-
-      - name: Verify APK signature (build fails if the APK is not installable)
-        run: |
+          ls -l app/build/outputs/apk/release/
+          cp app/build/outputs/apk/release/*.apk "dist/QmgStudio-v${VERSION}.apk"
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           BT="$SDK/build-tools/34.0.0"
-          APK="dist/QmgStudio-v${{ steps.ver.outputs.version }}.apk"
-          "$BT/apksigner" verify --verbose --print-certs "$APK"
-          "$BT/zipalign" -c -P 16 4 "$APK" || "$BT/zipalign" -c 4 "$APK"
-          "$BT/aapt2" dump badging "$APK" | head -3
+          "$BT/apksigner" verify --verbose --print-certs "dist/QmgStudio-v${VERSION}.apk"
+          "$BT/aapt2" dump badging "dist/QmgStudio-v${VERSION}.apk" > /tmp/badging.txt
+          head -3 /tmp/badging.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -72,19 +79,32 @@ jobs:
           path: dist/*.apk
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: Qmg Studio v${{ steps.ver.outputs.version }}
-          target_commitish: ${{ github.sha }}
-          files: dist/*.apk
-          generate_release_notes: true
-
-      - name: Save new version to repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
+          set -e
+          APK="dist/QmgStudio-v${VERSION}.apk"
+          # re-running the same version replaces the old release instead of failing
+          gh release delete "v${VERSION}" --cleanup-tag --yes > /dev/null 2>&1 || true
+          gh release create "v${VERSION}" "$APK" \
+            --target "$GITHUB_SHA" \
+            --title "Qmg Studio v${VERSION}" \
+            --generate-notes
+          echo "Release published: v${VERSION}"
+
+      - name: Save the new version in the repo
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -e
+          echo "$VERSION" > version.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add version.txt
-          git commit -m "chore: version ${{ steps.ver.outputs.version }} [skip ci]"
-          git pull --rebase origin ${{ github.ref_name }}
-          git push origin HEAD:${{ github.ref_name }}
+          git commit -m "chore: version ${VERSION} [skip ci]"
+          for i in 1 2 3; do
+            git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME" && exit 0
+            sleep 5
+          done
+          echo "could not push version.txt (the release itself is already published)"
