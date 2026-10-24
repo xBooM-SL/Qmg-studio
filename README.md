@@ -113,8 +113,8 @@ Not tested on every device.
 
 ## Credits
 
-Made by Claude
+Made by xBooM
 
-Maintained by xBooM-SL
+Help by claude
 
-Made in Sri Lanka
+Made in Sri Lanka...
