@@ -9,6 +9,7 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 /** Checks the newest GitHub Release of the repo, downloads its APK and hands it to the system installer. */
 object Updater {
@@ -18,7 +19,8 @@ object Updater {
         val version: String,   // "1.1"
         val apkUrl: String,
         val size: Long,
-        val notes: String
+        val notes: String,
+        val sha256: String = ""  // hex digest published by GitHub for the asset, "" if not available
     )
 
     /** "v1.10" / "1.10" -> [1, 10] */
@@ -52,6 +54,12 @@ object Updater {
         return c
     }
 
+    /** GitHub publishes "digest": "sha256:<hex>" for release assets. Returns the hex part, or "" if missing. */
+    private fun digestOf(a: JSONObject): String {
+        val d = a.optString("digest", "").trim().lowercase()
+        return if (d.startsWith("sha256:")) d.removePrefix("sha256:") else ""
+    }
+
     /** Returns the new release if one is newer than the installed app, null if up to date. Throws on network errors. */
     fun check(ctx: Context): Info? {
         val c = open(API)
@@ -68,7 +76,8 @@ object Updater {
                         version = tag.removePrefix("v").removePrefix("V"),
                         apkUrl = a.getString("browser_download_url"),
                         size = a.optLong("size", 0L),
-                        notes = j.optString("body", "").trim().take(500)
+                        notes = j.optString("body", "").trim().take(500),
+                        sha256 = digestOf(a)
                     )
                 }
             }
@@ -83,6 +92,7 @@ object Updater {
         val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val out = File(dir, "QmgStudio-v" + info.version + ".apk")
+        val md = MessageDigest.getInstance("SHA-256")
         val c = open(info.apkUrl)
         try {
             if (c.responseCode != 200) throw RuntimeException("Download failed (" + c.responseCode + ")")
@@ -95,12 +105,23 @@ object Updater {
                         val n = ins.read(buf)
                         if (n < 0) break
                         os.write(buf, 0, n)
+                        md.update(buf, 0, n)
                         done += n
                         if (total > 0) progress((done.toFloat() / total).coerceIn(0f, 1f))
                     }
                 }
             }
-            if (out.length() < 100_000L) throw RuntimeException("Downloaded file is too small")
+            if (out.length() < 100_000L) {
+                out.delete()
+                throw RuntimeException("Downloaded file is too small")
+            }
+            if (info.sha256.isNotEmpty()) {
+                val got = md.digest().joinToString("") { "%02x".format(it) }
+                if (got != info.sha256) {
+                    out.delete()
+                    throw RuntimeException("Downloaded file does not match the published checksum")
+                }
+            }
             return out
         } finally {
             c.disconnect()

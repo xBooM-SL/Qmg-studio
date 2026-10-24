@@ -44,6 +44,18 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Use the signing key from GitHub Secrets (if set)
+        env:
+          KEYSTORE_B64: ${{ secrets.QMG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "QMG_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "Signing with the key from GitHub Secrets"
+          else
+            echo "No QMG_KEYSTORE_BASE64 secret set: signing with the key committed in the repo"
+          fi
+
       - name: Install Android SDK parts
         run: |
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
@@ -57,6 +69,9 @@ jobs:
       - name: Build APK
         env:
           APP_VERSION: ${{ steps.ver.outputs.version }}
+          QMG_STORE_PASSWORD: ${{ secrets.QMG_STORE_PASSWORD }}
+          QMG_KEY_ALIAS: ${{ secrets.QMG_KEY_ALIAS }}
+          QMG_KEY_PASSWORD: ${{ secrets.QMG_KEY_PASSWORD }}
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Name and check the APK
